@@ -18,7 +18,7 @@ def conectar_email():
     return mail
 
 def baixar_anexos(mail):
-    status, mensagens = mail.search(None, "(UNSEEN)")
+    status, mensagens = mail.search(None, "ALL")
     for num in mensagens[0].split():
         status, dados = mail.fetch(num, "(RFC822)")
         raw_email = dados[0][1]
