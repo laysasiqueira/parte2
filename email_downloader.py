@@ -1,4 +1,4 @@
-# email_downloader.py
+# RPA/email_downloader.py
 
 import imaplib
 import email
@@ -17,33 +17,38 @@ def conectar_email():
     mail.select("inbox")
     return mail
 
+def buscar_emails(mail):
+    status, mensagens = mail.search(None, '(UNSEEN)')
+    return mensagens[0].split()
+
 def baixar_anexos(mail):
-    status, mensagens = mail.search(None, "(UNSEEN)")
-    for num in mensagens[0].split():
-        status, dados = mail.fetch(num, "(RFC822)")
-        raw_email = dados[0][1]
-        msg = email.message_from_bytes(raw_email)
+    os.makedirs(PASTA_DESTINO, exist_ok=True)
+    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
-        assunto, codif = decode_header(msg["Subject"])[0]
-        assunto = assunto.decode(codif or "utf-8") if isinstance(assunto, bytes) else assunto
-        de = msg.get("From")
-        log(f"E-mail recebido de {de} com assunto '{assunto}'.")
+    mensagens = buscar_emails(mail)
 
-        for parte in msg.walk():
-            if parte.get_content_maintype() == "multipart":
-                continue
-            if parte.get("Content-Disposition") is None:
-                continue
+    with open(LOG_PATH, "a", encoding="utf-8") as log:
+        for num in mensagens:
+            status, dados = mail.fetch(num, '(RFC822)')
+            raw_email = dados[0][1]
+            msg = email.message_from_bytes(raw_email)
 
-            nome_arquivo = parte.get_filename()
-            if nome_arquivo:
-                nome_arquivo, codif = decode_header(nome_arquivo)[0]
-                if isinstance(nome_arquivo, bytes):
-                    nome_arquivo = nome_arquivo.decode(codif or "utf-8")
+            assunto = msg.get("subject", "Sem assunto")
+            remetente = msg.get("from", "Desconhecido")
 
-                caminho = os.path.join(PASTA_DESTINO, nome_arquivo)
-                with open(caminho, "wb") as f:
-                    f.write(parte.get_payload(decode=True))
-                log(f"Anexo salvo: {caminho}")
+            for parte in msg.walk():
+                if parte.get_content_maintype() == 'multipart':
+                    continue
+                if parte.get("Content-Disposition") is None:
+                    continue
 
-    mail.logout()
+                nome_arquivo = parte.get_filename()
+                if nome_arquivo:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    caminho = os.path.join(PASTA_DESTINO, f"{timestamp}_{nome_arquivo}")
+
+                    with open(caminho, "wb") as f:
+                        f.write(parte.get_payload(decode=True))
+
+                    log.write(f"{datetime.now()} - Anexo salvo: {caminho} | De: {remetente} | Assunto: {assunto}\n")
+                    print(f"📎 Anexo salvo: {caminho}")
