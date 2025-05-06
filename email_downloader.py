@@ -6,6 +6,7 @@ from email.header import decode_header
 import os
 from datetime import datetime
 from config import EMAIL, SENHA, IMAP_SERVER, PASTA_DESTINO, LOG_PATH
+from pdf_to_excel import main as gerar_excels_dos_pdfs
 
 def log(mensagem):
     with open(LOG_PATH, "a", encoding="utf-8") as f:
@@ -41,9 +42,14 @@ def baixar_anexos(mail):
                 if isinstance(nome_arquivo, bytes):
                     nome_arquivo = nome_arquivo.decode(codif or "utf-8")
 
+                if not nome_arquivo.lower().endswith(".pdf"):
+                    log(f"Ignorado arquivo não-PDF: {nome_arquivo}")
+                    continue
+
                 caminho = os.path.join(PASTA_DESTINO, nome_arquivo)
                 with open(caminho, "wb") as f:
                     f.write(parte.get_payload(decode=True))
-                log(f"Anexo salvo: {caminho}")
+                log(f"Anexo PDF salvo: {caminho}")
 
     mail.logout()
+    gerar_excels_dos_pdfs()
