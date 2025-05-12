@@ -1,4 +1,4 @@
-# RPA/email_downloader.py
+# email_downloader.py
 
 import imaplib
 import email
@@ -8,9 +8,11 @@ import os
 from datetime import datetime
 from openpyxl import load_workbook
 from config import EMAIL, SENHA, IMAP_SERVER, PASTA_DESTINO, LOG_PATH, WHITELISTED_SENDERS
+from pdf_to_excel import main as gerar_excels_dos_pdfs
 
-# Extensões suportadas
-EXTENSOES_PERMITIDAS = ('.xlsx', '.xls', '.pdf', '.png', '.jpg', '.jpeg', '.docx', '.doc', '.txt')
+EXTENSOES_PERMITIDAS = ('.pdf',)
+os.makedirs(PASTA_DESTINO, exist_ok=True)
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
 def log(mensagem):
     with open(LOG_PATH, "a", encoding="utf-8") as f:
@@ -42,45 +44,60 @@ def baixar_anexos(mail):
 
     mensagens = buscar_emails(mail)
 
-    with open(LOG_PATH, "a", encoding="utf-8") as log_file:
-        for num in mensagens:
-            status, dados = mail.fetch(num, '(RFC822)')
-            raw_email = dados[0][1]
-            msg = email.message_from_bytes(raw_email)
+    for num in mensagens:
+        status, dados = mail.fetch(num, '(RFC822)')
+        raw_email = dados[0][1]
+        msg = email.message_from_bytes(raw_email)
 
-            assunto = msg.get("subject", "Sem assunto")
-            remetente = msg.get("from", "Desconhecido")
-            remetente_email = parseaddr(remetente)[1]
+        assunto, codif = decode_header(msg.get("Subject", "Sem assunto"))[0]
+        assunto = assunto.decode(codif or "utf-8") if isinstance(assunto, bytes) else assunto
 
-            if remetente_email not in WHITELISTED_SENDERS:
-                print(f"⛔ Remetente não autorizado: {remetente_email}")
-                log_file.write(f"{datetime.now()} - Email ignorado de: {remetente_email}\n")
+        remetente = msg.get("From", "Desconhecido")
+        remetente_email = parseaddr(remetente)[1]
+
+        if remetente_email not in WHITELISTED_SENDERS:
+            log(f"⛔ Remetente não autorizado: {remetente_email}")
+            continue
+
+        log(f"📥 E-mail de: {remetente_email} | Assunto: {assunto}")
+
+        for parte in msg.walk():
+            if parte.get_content_maintype() == 'multipart':
+                continue
+            if parte.get("Content-Disposition") is None:
                 continue
 
-            for parte in msg.walk():
-                if parte.get_content_maintype() == 'multipart':
-                    continue
-                if parte.get("Content-Disposition") is None:
-                    continue
+            nome_arquivo = parte.get_filename()
+            if not nome_arquivo:
+                continue
 
-                nome_arquivo = parte.get_filename()
-                if not nome_arquivo:
-                    continue
+            nome_arquivo, codif = decode_header(nome_arquivo)[0]
+            if isinstance(nome_arquivo, bytes):
+                nome_arquivo = nome_arquivo.decode(codif or "utf-8")
 
-                # Garante que a extensão seja permitida
-                if not nome_arquivo.lower().endswith(EXTENSOES_PERMITIDAS):
-                    print(f"⚠️ Tipo de arquivo ignorado: {nome_arquivo}")
-                    continue
+            if not nome_arquivo.lower().endswith(EXTENSOES_PERMITIDAS):
+                log(f"⚠️ Arquivo ignorado (não-PDF): {nome_arquivo}")
+                continue
 
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                caminho = os.path.join(PASTA_DESTINO, f"{timestamp}_{nome_arquivo}")
+            base, ext = os.path.splitext(nome_arquivo)
+            caminho = os.path.join(PASTA_DESTINO, nome_arquivo)
+            contador = 1
+            while os.path.exists(caminho):
+                caminho = os.path.join(PASTA_DESTINO, f"{base}_{contador}{ext}")
+                contador += 1
 
-                with open(caminho, "wb") as f:
-                    f.write(parte.get_payload(decode=True))
+            with open(caminho, "wb") as f:
+                f.write(parte.get_payload(decode=True))
 
-                log_file.write(f"{datetime.now()} - Anexo salvo: {caminho} | De: {remetente_email} | Assunto: {assunto}\n")
-                print(f"📎 Anexo salvo: {caminho}")
+            log(f"📎 Anexo PDF salvo: {caminho}")
 
-                # Se for Excel, abre o conteúdo
-                if nome_arquivo.endswith(".xlsx"):
-                    abrir_excel(caminho)
+    mail.logout()
+    gerar_excels_dos_pdfs()
+
+# Execução principal
+if __name__ == "__main__":
+    try:
+        mail = conectar_email()
+        baixar_anexos(mail)
+    except Exception as e:
+        log(f"❌ Erro durante execução: {e}")
