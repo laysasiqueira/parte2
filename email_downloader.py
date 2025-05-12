@@ -24,8 +24,8 @@ def conectar_email():
     mail.select("inbox")
     return mail
 
-def buscar_emails(mail):
-    status, mensagens = mail.search(None, '(UNSEEN)')
+def buscar_emails(mail, palavra_chave):
+    status, mensagens = mail.search(None, f'(UNSEEN SUBJECT "{palavra_chave}")')
     return mensagens[0].split()
 
 def abrir_excel(path):
@@ -38,12 +38,7 @@ def abrir_excel(path):
     except Exception as e:
         print(f"⚠️ Erro ao ler Excel {path}: {e}")
 
-def baixar_anexos(mail):
-    os.makedirs(PASTA_DESTINO, exist_ok=True)
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-
-    mensagens = buscar_emails(mail)
-
+def baixar_anexos(mail, mensagens):
     for num in mensagens:
         status, dados = mail.fetch(num, '(RFC822)')
         raw_email = dados[0][1]
